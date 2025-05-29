@@ -148,7 +148,7 @@ async def get_release(
     async with httpx.AsyncClient() as client:
         response = await client.get(url, params=params, headers=headers)
 
-    if response.status_code == 500:
+    if response.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
     elif response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail="Ошибка при получении данных с Broma API")
