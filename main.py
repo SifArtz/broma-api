@@ -1,11 +1,16 @@
 from fastapi import FastAPI, Query, HTTPException, Header
 from fastapi.responses import JSONResponse
+from typing import List, Optional
 import httpx
 
-app = FastAPI(title="Broma Api", description="API для работы с Broma релизами и доставками")
+app = FastAPI(
+    title="Broma API",
+    description="API для работы с Broma",
+    version="1.0.0"
+)
 
 BASE_URL = "https://api-rod.broma16.ru/api/accounts/629401"
-HEADERS_TEMPLATE = {
+COMMON_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:138.0) Gecko/20100101 Firefox/138.0",
     "Accept": "*/*",
     "X-Requested-With": "XMLHttpRequest",
@@ -13,218 +18,112 @@ HEADERS_TEMPLATE = {
     "Referer": "https://rod.broma16.ru/",
 }
 
-example_release_success = {
-    "status": "ok",
-    "data": {
-        "status": "ok",
-        "total": 1,
-        "data": [
-            {
-                "id": 6008176,
-                "title": "!ledledled",
-                "subtitle": "prod. by SHEEPY",
-                "release_type_id": 51,
-                "performers": ["merccifuul"],
-                "published_date": "2022-01-01",
-                "grid": "",
-                "ean": "5063015274090",
-                "moderation_status": "approved",
-                "label_id": 629401,
-                "label": "ООО \"РУ ТОЧКА МЕДИА\"",
-                "has_pendings": False,
-                "genres": [23],
-                "sale_start_dates": [{"date": "2022-04-15", "territories": [17]}],
-                "statuses": ["takendown", "approved", "ready"],
-                "catalogue_number": "R27304",
-                "artists": [{"id": 601431, "title": "merccifuul", "account_id": 643453}]
-            }
-        ],
-        "items": 1,
-        "page": 1
-    }
-}
 
-example_release_not_found = {
-    "status": "ok",
-    "data": {
-        "status": "ok",
-        "total": 0,
-        "data": [],
-        "items": 0,
-        "page": 1
-    }
-}
-
-example_deliveries_success = {
-    "status": "ok",
-    "data": [
-        {
-            "sender_id": 149916,
-            "recipient_id": 25240,
-            "status": "shipping",
-            "delivery_id": 63281,
-            "date": "2025-03-17 09:12:47",
-            "recipient_title": "Tidal Music AS",
-            "sender_title": "Broma 16 NL B.V."
-        },
-        {
-            "sender_id": 149916,
-            "recipient_id": 49803,
-            "status": "shipping",
-            "delivery_id": 63309,
-            "date": "2025-03-17 09:30:44",
-            "recipient_title": "Apple Music",
-            "sender_title": "Broma 16 NL B.V."
-        }
-    ]
-}
-
-example_takedown_success = {
-    "status": "ok",
-    "message": "Takedown request submitted successfully"
-}
-
-example_error_invalid_token = {
-    "detail": "Invalid or expired access token"
-}
-
-example_error_release_not_found = {
-    "detail": "Release not found"
-}
-
-example_error_takedown_conflict = {
-    "detail": "Release already taken down (no shipping outlets found)"
-}
-
-example_error_takedown_failed = {
-    "message": "Error while executing takedown request",
-    "broma_error": {
-        "error_code": 123,
-        "error_message": "Detailed error from Broma API"
-    }
-}
-
-async def get_release_id(upc_code: str, access_token: str):
-    headers = HEADERS_TEMPLATE.copy()
-    headers["X-Access-Token"] = access_token
-    url = f"{BASE_URL}/assets"
-    params = {"type": "releases", "search": upc_code}
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, params=params, headers=headers)
-
-    if response.status_code == 500:
-        raise HTTPException(status_code=401, detail="Invalid or expired access token")
-    elif response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Error fetching release data")
-
-    data = response.json()
-    total = data.get("data", {}).get("total", 0)
-    if total == 0:
-        raise HTTPException(status_code=404, detail="Release not found")
-
-    releases = data.get("data", {}).get("data", [])
-    return releases[0]["id"]
-
-@app.get(
-    "/release",
-    summary="Get metadata release",
-    tags=["Release"],
-    responses={
-        200: {"description": "Successful response with release metadata", "content": {"application/json": {"example": example_release_success}}},
-        401: {"description": "Invalid or expired access token", "content": {"application/json": {"example": example_error_invalid_token}}},
-        404: {"description": "Release not found", "content": {"application/json": {"example": example_release_not_found}}},
-    }
-)
-async def get_release(
-    upc_code: str = Query(..., description="UPC code релиза"),
-    access_token: str = Query(..., description="Токен доступа для API Broma"),
+async def fetch_from_broma(
+    url: str,
+    access_token: str,
+    headers_extra: Optional[dict] = None,
+    params: Optional[dict] = None,
+    method: str = "GET",
+    body: Optional[dict] = None
 ):
-    headers = HEADERS_TEMPLATE.copy()
+    headers = COMMON_HEADERS.copy()
     headers["X-Access-Token"] = access_token
-    url = f"{BASE_URL}/assets"
-    params = {"type": "releases", "search": upc_code}
+    if headers_extra:
+        headers.update(headers_extra)
 
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, params=params, headers=headers)
+        try:
+            if method == "GET":
+                response = await client.get(url, headers=headers, params=params)
+            elif method == "POST":
+                headers["Content-Type"] = "application/json"
+                response = await client.post(url, headers=headers, json=body)
+            else:
+                raise ValueError("Unsupported HTTP method")
 
-    if response.status_code == 401:
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=500, detail=f"Request error: {exc}")
+
+    if response.status_code == 401 or response.status_code == 500:
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
-    elif response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Error receiving data from the Broma API")
 
-    json_response = response.json()
-    total = json_response.get("data", {}).get("total", 0)
-    if total == 0:
-        return JSONResponse(status_code=404, content=json_response)
-
-    return json_response.get("data", {}).get("data", [])
-
-@app.get(
-    "/release_deliveries",
-    summary="Get deliveries release",
-    tags=["Deliveries"],
-    responses={
-        200: {"description": "Successful response with release deliveries", "content": {"application/json": {"example": example_deliveries_success}}},
-        401: {"description": "Invalid or expired access token", "content": {"application/json": {"example": example_error_invalid_token}}},
-        404: {"description": "Release not found", "content": {"application/json": {"example": example_error_release_not_found}}},
-    }
-)
-async def get_release_deliveries(
-    upc_code: str = Query(..., description="UPC code релиза"),
-    access_token: str = Query(..., description="Токен доступа для API Broma"),
-):
-    release_id = await get_release_id(upc_code, access_token)
-
-    headers = HEADERS_TEMPLATE.copy()
-    headers["X-Access-Token"] = access_token
-    url = f"{BASE_URL}/releases/{release_id}/outlets/deliveries"
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, headers=headers)
-
-    if response.status_code == 500:
-        raise HTTPException(status_code=401, detail="Invalid or expired access token")
-    elif response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Error receiving data from the Broma API")
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"Error from Broma API: {response.text}"
+        )
 
     return response.json()
 
-@app.post(
-    "/release_takedown",
-    summary="Release takedown",
-    tags=["Takedown"],
-    responses={
-        200: {"description": "Successful takedown request", "content": {"application/json": {"example": example_takedown_success}}},
-        401: {"description": "Invalid or expired access token", "content": {"application/json": {"example": example_error_invalid_token}}},
-        409: {"description": "Release already taken down", "content": {"application/json": {"example": example_error_takedown_conflict}}},
-        400: {"description": "Takedown request error", "content": {"application/json": {"example": example_error_takedown_failed}}},
-    }
-)
-async def release_takedown(
-    upc_code: str = Query(..., description="UPC code релиза"),
-    access_token: str = Query(..., description="Токен доступа для API Broma"),
-    hmac_hash: str = Header(..., alias="HMAC-Hash", description="HMAC Hash заголовок"),
-    hmac_timestamp: str = Header(..., alias="HMAC-Timestamp", description="HMAC Timestamp заголовок"),
+
+async def resolve_release_id(upc_code: str, access_token: str) -> int:
+    response_data = await fetch_from_broma(
+        url=f"{BASE_URL}/assets",
+        access_token=access_token,
+        params={"type": "releases", "search": upc_code}
+    )
+
+    total = response_data.get("data", {}).get("total", 0)
+    releases = response_data.get("data", {}).get("data", [])
+
+    if total == 0 or not releases:
+        raise HTTPException(status_code=404, detail="Release not found")
+
+    return releases[0]["id"]
+
+
+@app.get("/release", tags=["Release"], summary="Получить метаданные релиза")
+async def get_release(
+    upc_code: str = Query(..., description="UPC-код релиза"),
+    access_token: str = Query(..., description="API токен доступа")
 ):
-    release_id = await get_release_id(upc_code, access_token)
+    data = await fetch_from_broma(
+        url=f"{BASE_URL}/assets",
+        access_token=access_token,
+        params={"type": "releases", "search": upc_code}
+    )
 
-    headers = HEADERS_TEMPLATE.copy()
-    headers["X-Access-Token"] = access_token
-    headers["HMAC-Hash"] = hmac_hash
-    headers["HMAC-Timestamp"] = hmac_timestamp
+    releases = data.get("data", {}).get("data", [])
+    if not releases:
+        return JSONResponse(status_code=404, content={"detail": "Release not found"})
 
-    url_deliveries = f"{BASE_URL}/releases/{release_id}/outlets/deliveries"
+    return releases
 
-    async with httpx.AsyncClient() as client:
-        response_deliveries = await client.get(url_deliveries, headers=headers)
 
-    if response_deliveries.status_code == 500:
-        raise HTTPException(status_code=401, detail="Invalid or expired access token")
-    elif response_deliveries.status_code != 200:
-        raise HTTPException(status_code=response_deliveries.status_code, detail="Error receiving data from the Broma API")
+@app.get("/release_deliveries", tags=["Deliveries"], summary="Получить доставки релиза")
+async def get_release_deliveries(
+    upc_code: str = Query(..., description="UPC-код релиза"),
+    access_token: str = Query(..., description="API токен доступа")
+):
+    release_id = await resolve_release_id(upc_code, access_token)
 
-    deliveries_data = response_deliveries.json()
+    deliveries = await fetch_from_broma(
+        url=f"{BASE_URL}/releases/{release_id}/outlets/deliveries",
+        access_token=access_token
+    )
+
+    return deliveries
+
+
+@app.post("/release_takedown", tags=["Takedown"], summary="Снять релиз с платформ")
+async def takedown_release(
+    upc_code: str = Query(..., description="UPC-код релиза"),
+    access_token: str = Query(..., description="API токен доступа"),
+    hmac_hash: str = Header(..., alias="HMAC-Hash", description="HMAC-хеш заголовок"),
+    hmac_timestamp: str = Header(..., alias="HMAC-Timestamp", description="HMAC-временная метка")
+):
+    release_id = await resolve_release_id(upc_code, access_token)
+
+    deliveries_data = await fetch_from_broma(
+        url=f"{BASE_URL}/releases/{release_id}/outlets/deliveries",
+        access_token=access_token,
+        headers_extra={
+            "HMAC-Hash": hmac_hash,
+            "HMAC-Timestamp": hmac_timestamp
+        }
+    )
+
     shipping_outlets = [
         item["recipient_id"]
         for item in deliveries_data.get("data", [])
@@ -232,35 +131,25 @@ async def release_takedown(
     ]
 
     if not shipping_outlets:
-        return JSONResponse(
+        raise HTTPException(
             status_code=409,
-            content={"detail": "Release already taken down (no shipping outlets found)"}
+            detail="Release already taken down (no shipping outlets found)"
         )
 
-    url_takedown = f"{BASE_URL}/releases/{release_id}/queues/takedowns"
-    body = {
+    takedown_body = {
         "outlets": shipping_outlets,
         "reason": {"id": "1", "message": ""}
     }
-    headers["Content-Type"] = "application/json"
 
-    async with httpx.AsyncClient() as client:
-        response_takedown = await client.post(url_takedown, json=body, headers=headers)
+    takedown_response = await fetch_from_broma(
+        url=f"{BASE_URL}/releases/{release_id}/queues/takedowns",
+        access_token=access_token,
+        headers_extra={
+            "HMAC-Hash": hmac_hash,
+            "HMAC-Timestamp": hmac_timestamp
+        },
+        method="POST",
+        body=takedown_body
+    )
 
-    if response_takedown.status_code == 500:
-        raise HTTPException(status_code=401, detail="Invalid or expired access token")
-    elif response_takedown.status_code != 200:
-        try:
-            error_detail = response_takedown.json()
-        except Exception:
-            error_detail = response_takedown.text
-
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "message": "Error while executing takedown request",
-                "broma_error": error_detail
-            }
-        )
-
-    return response_takedown.json()
+    return takedown_response
