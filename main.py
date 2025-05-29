@@ -37,7 +37,7 @@ async def get_release_id(upc_code: str, access_token: str):
 
 @app.get("/release", summary="Get metadata release", tags=["Release"])
 async def get_release(
-    upc_code: str = Query(..., description="UPC code товара"),
+    upc_code: str = Query(..., description="UPC code релиза"),
     access_token: str = Query(..., description="Токен доступа для API Broma"),
 ):
     headers = HEADERS_TEMPLATE.copy()
@@ -62,7 +62,7 @@ async def get_release(
 
 @app.get("/release_deliveries", summary="Get deliveries release", tags=["Deliveries"])
 async def get_release_deliveries(
-    upc_code: str = Query(..., description="UPC code товара"),
+    upc_code: str = Query(..., description="UPC code релиза"),
     access_token: str = Query(..., description="Токен доступа для API Broma"),
 ):
     release_id = await get_release_id(upc_code, access_token)
@@ -83,7 +83,7 @@ async def get_release_deliveries(
 
 @app.post("/release_takedown", summary="Release takedown", tags=["Takedown"])
 async def release_takedown(
-    upc_code: str = Query(..., description="UPC code товара"),
+    upc_code: str = Query(..., description="UPC code релиза"),
     access_token: str = Query(..., description="Токен доступа для API Broma"),
     hmac_hash: str = Header(..., alias="HMAC-Hash", description="HMAC Hash заголовок"),
     hmac_timestamp: str = Header(..., alias="HMAC-Timestamp", description="HMAC Timestamp заголовок"),
