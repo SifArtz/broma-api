@@ -97,7 +97,7 @@ example_error_takedown_conflict = {
 }
 
 example_error_takedown_failed = {
-    "message": "Ошибка при выполнении takedown запроса",
+    "message": "Error while executing takedown request",
     "broma_error": {
         "error_code": 123,
         "error_message": "Detailed error from Broma API"
@@ -151,7 +151,7 @@ async def get_release(
     if response.status_code == 401:
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
     elif response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Ошибка при получении данных с Broma API")
+        raise HTTPException(status_code=response.status_code, detail="Error receiving data from the Broma API")
 
     json_response = response.json()
     total = json_response.get("data", {}).get("total", 0)
@@ -186,7 +186,7 @@ async def get_release_deliveries(
     if response.status_code == 500:
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
     elif response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Ошибка при получении данных с Broma API")
+        raise HTTPException(status_code=response.status_code, detail="Error receiving data from the Broma API")
 
     return response.json()
 
@@ -222,7 +222,7 @@ async def release_takedown(
     if response_deliveries.status_code == 500:
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
     elif response_deliveries.status_code != 200:
-        raise HTTPException(status_code=response_deliveries.status_code, detail="Ошибка при получении данных с Broma API")
+        raise HTTPException(status_code=response_deliveries.status_code, detail="Error receiving data from the Broma API")
 
     deliveries_data = response_deliveries.json()
     shipping_outlets = [
@@ -258,7 +258,7 @@ async def release_takedown(
         raise HTTPException(
             status_code=400,
             detail={
-                "message": "Ошибка при выполнении takedown запроса",
+                "message": "Error while executing takedown request",
                 "broma_error": error_detail
             }
         )
